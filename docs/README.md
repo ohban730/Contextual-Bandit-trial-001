@@ -44,7 +44,7 @@
 | `embeddings.py` | 動画タイトルを「数字の意味コード」に変える係 | [embeddings.md](embeddings.md) |
 | `semantic.py` | タイトルの意味が似ているか調べる係 | [semantic.md](semantic.md) |
 | `score.py` | チャンネルに点数をつける係 | [score.md](score.md) |
-| `bandit.py` | 1つ選んで、好みを学習していくロボットの頭脳 | [bandit.md](bandit.md) |
+| `bandit.py` | 1つ選んで、好みを学習していくロボットの頭脳 | [bandit.md](bandit.md) / 具体例つき: [bandit_walkthrough.md](bandit_walkthrough.md) |
 | `run_pipeline.py` | 全部をつなげて動かす司令塔 | [run_pipeline.md](run_pipeline.md) |
 
 読む順番は、上の表の上から順番がおすすめです。最後に `bandit.py` を読むと、
