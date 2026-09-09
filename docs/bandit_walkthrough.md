@@ -226,6 +226,70 @@ theta_mean1 = np.linalg.inv(A1) @ b1
 「久しぶり度が高いチャンネルにgoodを付けた」という1件の経験だけで、
 もう「久しぶり度を評価する傾向」が芽生え始めていることがわかります。
 
+**`@property`とは**: 実際の[`theta_mean`](../src/watch_recommender/bandit.py:60-62)には
+`@property`というデコレータが付いています。
+
+```python
+@property
+def theta_mean(self) -> np.ndarray:
+    return np.linalg.inv(self.A) @ self.b
+```
+
+`@staticmethod`(→`_with_bias`の説明を参照)が「`self`を使わない
+メソッド」だったのに対し、`@property`は逆に**「`()`を付けずに、
+普通の属性(変数)のように呼び出せるメソッド」**にするデコレータです。
+
+```python
+bandit.theta_mean        # @propertyのおかげで()無しで呼べる
+bandit.theta_mean()      # もし@propertyが無かったら、こう書く必要があった
+```
+
+実際、[run_pipeline.py:41](../scripts/run_pipeline.py:41)では
+`theta = bandit.theta_mean`と、`()`無しで呼び出されています。
+
+中身は毎回`self.A`と`self.b`から逆行列を計算し直しているので、
+実体は「保存された値」ではなく「そのつど計算される値」です。それでも
+呼び出す側からは「`bandit`が今持っている学習結果」という**属性**の
+ように自然に読めるようにする、というのが`@property`を使う意図です。
+また`setter`(`@theta_mean.setter`)を定義していないので、
+`bandit.theta_mean = ...`のように書き換えようとするとエラーになります
+(`theta_mean`は`A`と`b`から一意に決まる、読み取り専用の値だからです)。
+
+**setterとは**: `@property`が「値を読み取るときの動作」を定義するのに
+対して、setterは「値を書き込む(代入する)ときの動作」を定義する
+デコレータです。`@プロパティ名.setter`という形で書きます。
+
+```python
+class Foo:
+    def __init__(self):
+        self._x = 0
+
+    @property
+    def x(self):          # getter: 読み取り時に呼ばれる
+        return self._x
+
+    @x.setter
+    def x(self, value):   # setter: 書き込み時に呼ばれる
+        self._x = value
+
+foo = Foo()
+foo.x = 10        # 裏でsetterが value=10 で呼ばれる
+print(foo.x)      # 裏でgetterが呼ばれ、10が返る
+```
+
+`foo.x = 10`は見た目こそ普通の変数への代入ですが、実際には
+setterメソッドが動いていて、バリデーションをしたり、他の内部状態を
+連動して更新したりできます。
+
+`theta_mean`のようにsetterを定義しないままにしておくと、
+`bandit.theta_mean = ...`は`AttributeError: can't set attribute`で
+エラーになります。これは設計として理にかなっています。`theta_mean`は
+`self.A`と`self.b`から計算で一意に決まる値なので、直接上書きできて
+しまうと「`A`, `b`と矛盾した`theta_mean`」という壊れた状態を作れて
+しまいます。setterを定義しないことで、「`theta_mean`を変えたければ、
+`update()`で`A`と`b`を正しく更新するしかない」という制約を、
+言語レベルで強制しています。
+
 ---
 
 ## ステップ2: 2件目のフィードバック(bad)を反映する
@@ -278,11 +342,56 @@ b2 = b1 + 0.0 * x2 = [0.9, 0.2, 0.7, 0.5, 1.0]   ← b1と全く同じ！
 [`sample_scores()`](../src/watch_recommender/bandit.py:64-70) の中身:
 
 ```python
+X = self._with_bias(context_matrix)
 A_inv = np.linalg.inv(self.A)
 theta_hat = A_inv @ self.b          # = theta_mean2 と同じ
 theta_sample = np.random.multivariate_normal(theta_hat, (alpha**2) * A_inv)
 return X @ theta_sample
 ```
+
+### `X = self._with_bias(context_matrix)`とは
+
+[`_with_bias`](../src/watch_recommender/bandit.py:55-58)は、候補の
+特徴量行列(4次元)に「バイアス列(常に1.0)」を1本追加して、5次元に
+そろえるための関数です。`theta_sample`は5次元(4特徴量+バイアス)なので、
+候補側も5次元にしないと`X @ theta_sample`の内積計算ができません。
+
+```python
+@staticmethod
+def _with_bias(context_matrix: np.ndarray) -> np.ndarray:
+    bias = np.ones((context_matrix.shape[0], 1))
+    return np.hstack([context_matrix, bias])
+```
+
+**`@staticmethod`とは**: メソッドの性質を変える「デコレータ」という
+目印です。付けると、そのメソッドは`self`(インスタンス自身)を
+使わずに呼び出せる、「クラスの中に置いてあるだけの普通の関数」に
+なります。`_with_bias`は`self.A`や`self.b`など、そのインスタンス
+固有の状態を一切使わない(渡された`context_matrix`だけで完結する)
+処理なので、`self`を引数に取る意味が無く`@staticmethod`にしています。
+(呼び出し側は`self._with_bias(...)`のように`self`経由で呼んでいますが、
+中身は`self`を参照していません。)
+
+**`np.ones((n, 1))`とは**: 指定した形(shape)の配列を、全部`1.0`で
+埋めて作る関数です。`context_matrix.shape[0]`は候補の件数なので、
+「候補が何件あっても、その件数ぶんだけ1.0を並べた縦1列」を作ります。
+
+**`np.hstack([...])`とは**: 複数の配列を横方向(horizontal)に
+連結する関数です。候補2件の例で実際に計算すると:
+
+```python
+context_matrix.shape        # (2, 4)  ← 候補2件 × 特徴量4個
+bias = np.ones((2, 1))      # [[1.], [1.]]
+
+np.hstack([context_matrix, bias])
+# [[0.9 0.1 0.6 0.4 1. ]   ← 候補Aの4特徴量 + バイアス列
+#  [0.2 0.9 0.3 0.3 1. ]]  ← 候補Bの4特徴量 + バイアス列
+# shape: (2, 4) と (2, 1) を横に繋げて (2, 5) に
+```
+
+これで候補側も`theta_sample`と同じ5次元にそろい、`X @ theta_sample`
+(候補×5次元 と 5次元 の内積)で、候補ごとのスコアが1個ずつ
+計算できるようになります。
 
 ### `np.random.multivariate_normal`とは
 
