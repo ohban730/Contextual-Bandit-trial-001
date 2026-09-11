@@ -339,6 +339,15 @@ b2 = b1 + 0.0 * x2 = [0.9, 0.2, 0.7, 0.5, 1.0]   ← b1と全く同じ！
 候補B(最近よく見ている) = [recency=0.2, frequency=0.9, genre=0.3, semantic=0.3]
 ```
 
+これから追いかける「①`theta`の事後分布(中心`theta_hat`, 広がり
+`(alpha**2)*A_inv`)から`theta`を1回サンプリングする → ②サンプリング
+した`theta`で各候補のスコアを計算する → ③一番スコアが高い候補を選ぶ」
+という一連の手順そのものが、**Thompson Sampling**と呼ばれる
+アルゴリズムです。「一番自信のある予想(`theta_hat`)をそのまま使う」
+のではなく、わざわざ「ありえそうな別の`theta`」をくじ引きしてから
+順位を決めるところがポイントで、これによって探索(exploration)と
+活用(exploitation)のバランスを自動的に取っています。
+
 [`sample_scores()`](../src/watch_recommender/bandit.py:64-70) の中身:
 
 ```python
